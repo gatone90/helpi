@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type Listing = {
   id: number;
+  kind: "donation" | "need";
   title: string;
   category: string;
   place: string;
@@ -16,7 +17,11 @@ type Listing = {
   userId: string;
   saved?: boolean;
   images?: string[];
+  latitude?: number;
+  longitude?: number;
 };
+
+type Coordinates = { latitude: number; longitude: number };
 
 type MockUser = {
   id: string;
@@ -44,6 +49,15 @@ const CONTACT_REQUESTS_KEY = "helpi:contact-requests";
 const PROFILE_KEY = "helpi:profile";
 const LISTINGS_KEY = "helpi:listings";
 
+function distanceInKm(from: Coordinates, to: Coordinates) {
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(to.latitude - from.latitude);
+  const longitudeDelta = toRadians(to.longitude - from.longitude);
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(toRadians(from.latitude)) * Math.cos(toRadians(to.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 async function optimizeImage(file: File) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 1280 / bitmap.width, 1280 / bitmap.height);
@@ -68,12 +82,14 @@ const mockUsers: MockUser[] = [
 ];
 
 const starterListings: Listing[] = [
-  { id: 1, userId: "lucia", title: "Abrigo para este invierno", category: "Ropa", place: "Godoy Cruz", distance: "1,2 km", detail: "Frazadas y camperas en buen estado", icon: "🧣", tone: "peach", posted: "Hace 2 h" },
-  { id: 2, userId: "diego", title: "Libros para seguir aprendiendo", category: "Educación", place: "Ciudad de Mendoza", distance: "2,4 km", detail: "Libros de primaria y cuentos infantiles", icon: "📚", tone: "blue", posted: "Hace 5 h" },
-  { id: 3, userId: "sofia", title: "Una mano para equipar el comedor", category: "Hogar", place: "Las Heras", distance: "3,1 km", detail: "Vajilla, ollas y utensilios de cocina", icon: "🍲", tone: "yellow", posted: "Ayer" },
-  { id: 4, userId: "mateo", title: "Materiales para el taller de arte", category: "Educación", place: "Guaymallén", distance: "4,6 km", detail: "Lápices, témperas y hojas para dibujar", icon: "🎨", tone: "lilac", posted: "Ayer" },
-  { id: 5, userId: "manos-abiertas", title: "Una compra compartida", category: "Alimentos", place: "Ciudad de Mendoza", distance: "2,8 km", detail: "Alimentos para una familia esta semana", icon: "🥕", tone: "yellow", posted: "Hace 3 h" },
-  { id: 6, userId: "valentina", title: "Una compu para seguir estudiando", category: "Tecnología", place: "Maipú", distance: "5,2 km", detail: "Notebook en funcionamiento para estudiar", icon: "💻", tone: "blue", posted: "Ayer" },
+  { id: 1, kind: "need", userId: "lucia", title: "Abrigo para este invierno", category: "Ropa", place: "Godoy Cruz", distance: "1,2 km", detail: "Frazadas y camperas en buen estado", icon: "🧣", tone: "peach", posted: "Hace 2 h", latitude: -32.93, longitude: -68.85 },
+  { id: 2, kind: "need", userId: "diego", title: "Libros para seguir aprendiendo", category: "Educación", place: "Ciudad de Mendoza", distance: "2,4 km", detail: "Libros de primaria y cuentos infantiles", icon: "📚", tone: "blue", posted: "Hace 5 h", latitude: -32.89, longitude: -68.84 },
+  { id: 3, kind: "need", userId: "sofia", title: "Una mano para equipar el comedor", category: "Hogar", place: "Las Heras", distance: "3,1 km", detail: "Vajilla, ollas y utensilios de cocina", icon: "🍲", tone: "yellow", posted: "Ayer", latitude: -32.85, longitude: -68.83 },
+  { id: 4, kind: "need", userId: "mateo", title: "Materiales para el taller de arte", category: "Educación", place: "Guaymallén", distance: "4,6 km", detail: "Lápices, témperas y hojas para dibujar", icon: "🎨", tone: "lilac", posted: "Ayer", latitude: -32.88, longitude: -68.79 },
+  { id: 5, kind: "need", userId: "manos-abiertas", title: "Una compra compartida", category: "Alimentos", place: "Ciudad de Mendoza", distance: "2,8 km", detail: "Alimentos para una familia esta semana", icon: "🥕", tone: "yellow", posted: "Hace 3 h", latitude: -32.89, longitude: -68.84 },
+  { id: 6, kind: "need", userId: "valentina", title: "Una compu para seguir estudiando", category: "Tecnología", place: "Maipú", distance: "5,2 km", detail: "Notebook en funcionamiento para estudiar", icon: "💻", tone: "blue", posted: "Ayer", latitude: -32.98, longitude: -68.79 },
+  { id: 7, kind: "donation", userId: "martina", title: "Campera abrigada para compartir", category: "Ropa", place: "Godoy Cruz", distance: "1,1 km", detail: "Campera en buen estado, talle M", icon: "🧥", tone: "peach", posted: "Hoy", latitude: -32.94, longitude: -68.86 },
+  { id: 8, kind: "donation", userId: "diego", title: "Lote de libros infantiles", category: "Educación", place: "Ciudad de Mendoza", distance: "2,1 km", detail: "Cuentos y libros de primaria para donar", icon: "📖", tone: "blue", posted: "Hoy", latitude: -32.89, longitude: -68.84 },
 ];
 
 const categories = ["Todo", "Ropa", "Hogar", "Educación", "Alimentos", "Tecnología"];
@@ -106,8 +122,13 @@ export default function Home() {
   const [profile, setProfile] = useState<MockUser>(defaultUser);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todo");
+  const [listingKindFilter, setListingKindFilter] = useState<"all" | "donation" | "need">("all");
   const [activeNav, setActiveNav] = useState("inicio");
   const [showCreate, setShowCreate] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [newListingKind, setNewListingKind] = useState<"donation" | "need">("need");
+  const [userPosition, setUserPosition] = useState<Coordinates | null>(null);
+  const [sortNearest, setSortNearest] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [contactTarget, setContactTarget] = useState<Listing | null>(null);
@@ -132,7 +153,7 @@ export default function Home() {
       }
       const storedListings = window.localStorage.getItem(LISTINGS_KEY);
       if (storedListings) {
-        const savedListings = JSON.parse(storedListings) as Listing[];
+        const savedListings = (JSON.parse(storedListings) as Listing[]).map((item) => ({ ...item, kind: item.kind === "donation" ? "donation" as const : "need" as const }));
         if (Array.isArray(savedListings)) {
           const savedIds = new Set(savedListings.map((item) => item.id));
           setItems([...savedListings, ...starterListings.filter((item) => !savedIds.has(item.id))]);
@@ -148,8 +169,54 @@ export default function Home() {
     const searchText = `${item.title} ${item.category} ${item.place} ${item.detail}`.toLocaleLowerCase("es");
     const matchesQuery = searchText.includes(query.trim().toLocaleLowerCase("es"));
     const matchesSaved = activeNav !== "guardados" || item.saved;
-    return matchesCategory && matchesQuery && matchesSaved;
-  }), [items, category, query, activeNav]);
+    const matchesKind = listingKindFilter === "all" || item.kind === listingKindFilter;
+    return matchesCategory && matchesQuery && matchesSaved && matchesKind;
+  }).sort((a, b) => {
+    if (!sortNearest || !userPosition) return 0;
+    const aDistance = a.latitude === undefined || a.longitude === undefined ? Number.POSITIVE_INFINITY : distanceInKm(userPosition, { latitude: a.latitude, longitude: a.longitude });
+    const bDistance = b.latitude === undefined || b.longitude === undefined ? Number.POSITIVE_INFINITY : distanceInKm(userPosition, { latitude: b.latitude, longitude: b.longitude });
+    return aDistance - bDistance;
+  }), [items, category, query, activeNav, listingKindFilter, sortNearest, userPosition]);
+
+  const matches = useMemo(() => {
+    const needs = items.filter((item) => item.kind === "need");
+    const donations = items.filter((item) => item.kind === "donation");
+    return needs.flatMap((need) => donations
+      .filter((donation) => donation.category === need.category && donation.userId !== need.userId)
+      .map((donation) => ({ need, donation, distance: need.latitude === undefined || need.longitude === undefined || donation.latitude === undefined || donation.longitude === undefined ? null : distanceInKm({ latitude: need.latitude, longitude: need.longitude }, { latitude: donation.latitude, longitude: donation.longitude }) })))
+      .filter((match) => match.distance === null || match.distance <= 50)
+      .sort((a, b) => (a.distance ?? Number.POSITIVE_INFINITY) - (b.distance ?? Number.POSITIVE_INFINITY));
+  }, [items]);
+
+  function openPublishForm(kind: "donation" | "need" = "need") {
+    setNewListingKind(kind);
+    setShowCreate(true);
+  }
+
+  function requestLocation() {
+    if (!navigator.geolocation) {
+      setNotice("Tu navegador no ofrece geolocalización.");
+      return;
+    }
+    setNotice("Solicitando permiso para usar tu ubicación…");
+    navigator.geolocation.getCurrentPosition((position) => {
+      setUserPosition({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      setSortNearest(true);
+      setNotice("Ubicación activada. Mostramos primero las publicaciones más cercanas.");
+      window.setTimeout(() => setNotice(""), 4200);
+    }, (error) => {
+      const message = error.code === error.PERMISSION_DENIED ? "No se autorizó el acceso a tu ubicación." : "No pudimos obtener tu ubicación. Podés volver a intentarlo.";
+      setNotice(message);
+      window.setTimeout(() => setNotice(""), 4200);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  }
+
+  function listingDistance(item: Listing) {
+    if (userPosition && item.latitude !== undefined && item.longitude !== undefined) {
+      return `${distanceInKm(userPosition, { latitude: item.latitude, longitude: item.longitude }).toFixed(1).replace(".", ",")} km`;
+    }
+    return item.distance;
+  }
 
   function selectNav(id: string) {
     setActiveNav(id);
@@ -198,8 +265,14 @@ export default function Home() {
     const place = String(form.get("place") || "").trim();
     const detail = String(form.get("detail") || "").trim();
     const kind = String(form.get("category") || "Hogar");
+    const includeLocation = form.get("includeLocation") === "on" && Boolean(userPosition);
     if (!title || !place) return;
-    const newListing: Listing = { id: Date.now(), userId: currentUser.id, title, category: kind, place, distance: "Cerca tuyo", detail: detail || "Una nueva oportunidad para ayudar", icon: "💛", tone: "peach", posted: "Ahora", images: newPhotos };
+    const newListing: Listing = {
+      id: Date.now(), userId: currentUser.id, kind: newListingKind, title, category: kind, place,
+      distance: includeLocation ? "0 km" : "Sin ubicación precisa", detail: detail || "Una nueva oportunidad para ayudar",
+      icon: newListingKind === "donation" ? "🎁" : "💛", tone: "peach", posted: "Ahora", images: newPhotos,
+      ...(includeLocation && userPosition ? userPosition : {}),
+    };
     const nextItems = [newListing, ...items];
     try {
       window.localStorage.setItem(LISTINGS_KEY, JSON.stringify(nextItems));
@@ -209,11 +282,12 @@ export default function Home() {
     }
     setItems(nextItems);
     setCategory("Todo");
+    setListingKindFilter("all");
     setActiveNav("inicio");
     setShowCreate(false);
     setNewPhotos([]);
     setPhotoError("");
-    setNotice("¡Listo! Tu publicación quedó guardada en este navegador.");
+    setNotice(`¡Listo! Tu ${newListingKind === "donation" ? "donación" : "necesidad"} quedó publicada en este navegador.`);
     window.setTimeout(() => setNotice(""), 3600);
   }
 
@@ -292,17 +366,17 @@ export default function Home() {
     <main className="app-shell" id="inicio">
       <aside className="sidebar">
         <Brand />
-        <div className="side-location"><span className="location-icon"><PinIcon /></span><span><small>Tu ubicación</small><strong>{currentUser.place}, Argentina</strong></span><span className="chevron">⌄</span></div>
+        <button type="button" className="side-location" onClick={requestLocation} aria-label="Activar geolocalización"><span className="location-icon"><PinIcon /></span><span><small>{userPosition ? "Ubicación activa" : "Tu ubicación"}</small><strong>{userPosition ? "Cerca de vos" : `${currentUser.place}, Argentina`}</strong></span><span className="chevron">⌄</span></button>
         <div className="side-label">MENÚ</div>
         <nav className="side-nav" aria-label="Navegación principal">
           {navItems.map((item) => <button key={item.id} className={`side-nav-item ${activeNav === item.id ? "selected" : ""}`} onClick={() => selectNav(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}
         </nav>
-        <button className="publish-menu-button" onClick={() => setShowCreate(true)}><span>＋</span> Publicar <b>+</b></button>
+        <button className="publish-menu-button" onClick={() => openPublishForm()}><span>＋</span> Publicar <b>+</b></button>
         <div className="side-promo">
           <div className="promo-mascot"><Image src="/helpi-heart.svg" alt="Helpi, el corazón que conecta" width={84} height={84} /></div>
           <strong>Un gesto puede<br />cambiar un día.</strong>
           <p>Encontrá algo que puedas compartir hoy.</p>
-          <button onClick={() => setShowCreate(true)}>Publicar una donación <span>↗</span></button>
+          <button onClick={() => openPublishForm("donation")}>Publicar una donación <span>↗</span></button>
         </div>
         <button className="profile-mini" onClick={() => { setSelectedUser(currentUser); setShowProfile(true); }}><Avatar user={currentUser} /><span className="profile-copy"><strong>{currentUser.name}</strong><small>Cuenta personal</small></span><span className="more">···</span></button>
       </aside>
@@ -310,14 +384,14 @@ export default function Home() {
       <section className="workspace">
         <header className="app-topbar">
           <div className="mobile-brand"><Brand /></div>
-          <div className="mobile-location"><PinIcon /><span>{currentUser.place}</span><b>⌄</b></div>
-          <div className="topbar-right"><button className="top-icon" aria-label="Notificaciones" onClick={() => setNotice("No tenés notificaciones nuevas.")}>♧<i /></button><button className="top-avatar" onClick={() => { setSelectedUser(currentUser); setShowProfile(true); }}>{currentUser.initials}</button></div>
+          <button type="button" className="mobile-location" onClick={requestLocation} aria-label="Activar geolocalización"><PinIcon /><span>{userPosition ? "Cerca de vos" : currentUser.place}</span><b>⌄</b></button>
+          <div className="topbar-right"><button className="top-icon" aria-label="Notificaciones" onClick={() => setNotice("Los avisos por email requieren conectar un servicio de correo.")}>♧<i /></button><button className="top-avatar" onClick={() => { setSelectedUser(currentUser); setShowProfile(true); }}>{currentUser.initials}</button></div>
         </header>
 
         <div className="page-content">
           <div className="welcome-row">
             <div><div className="hello-overline">MARTES, 27 DE OCTUBRE <span>· {currentUser.place.toLocaleUpperCase("es")}</span></div><h1>Hola, {currentUser.name.split(" ")[0]} <span className="wave">✳</span></h1><p>Hoy puede ser el día en que algo encuentre a alguien.</p></div>
-            <button className="post-button" onClick={() => setShowCreate(true)}><span>＋</span> Publicar donación</button>
+            <button className="post-button" onClick={() => openPublishForm("donation")}><span>＋</span> Publicar donación</button>
           </div>
 
           <section className="welcome-card">
@@ -326,24 +400,27 @@ export default function Home() {
             <span className="welcome-spark spark-one">✳</span><span className="welcome-spark spark-two">✦</span>
           </section>
 
-          <div className="quick-stats"><div className="stat-icon stat-coral">♥</div><span><strong>24</strong><small>nuevas necesidades</small></span><i className="stat-separator"/><div className="stat-icon stat-blue">↗</div><span><strong>8</strong><small>cerca de vos</small></span><a href="#explorar" onClick={() => selectNav("explorar")}>Ver oportunidades <span>→</span></a></div>
+          <div className="quick-stats"><div className="stat-icon stat-coral">♥</div><span><strong>{items.filter((item) => item.kind === "need").length}</strong><small>necesidades abiertas</small></span><i className="stat-separator"/><div className="stat-icon stat-blue">↗</div><span><strong>{items.filter((item) => item.kind === "donation").length}</strong><small>donaciones publicadas</small></span><a href="#explorar" onClick={() => selectNav("explorar")}>Ver oportunidades <span>→</span></a></div>
+
+          {matches.length > 0 && <section className="matching-section" aria-labelledby="matching-title"><div className="section-title"><div><span className="section-kicker">DONACIONES QUE PUEDEN CUBRIR UNA NECESIDAD</span><h2 id="matching-title">Coincidencias posibles</h2></div></div><div className="matching-grid">{matches.slice(0, 3).map(({ need, donation, distance }) => { const requester = usersById.get(need.userId) || currentUser; const donor = usersById.get(donation.userId) || currentUser; const target = need.userId === currentUser.id ? donation : need; return <article className="matching-card" key={`${need.id}-${donation.id}`}><span className="matching-category">{need.category}{distance !== null && ` · ${distance.toFixed(1).replace(".", ",")} km entre publicaciones`}</span><h3>{donation.title}</h3><p>puede ayudar con</p><h3>{need.title}</h3><div className="matching-people"><span>Ofrece <strong>{donor.name}</strong></span><span>Necesita <strong>{requester.name}</strong></span></div><button type="button" onClick={() => showContactForm(target)}>Ver coincidencia <span>→</span></button></article>; })}</div></section>}
 
           <section className="discover" id="explorar">
-            <div className="section-title"><div><span className="section-kicker">ENCUENTROS QUE PUEDEN PASAR</span><h2>Necesidades cerca tuyo</h2></div><button className="text-action" onClick={() => { setCategory("Todo"); setActiveNav("explorar"); }}>Ver todas <span>→</span></button></div>
-            <div className="search-row"><label className="search-box"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="¿Qué te gustaría encontrar?" aria-label="Buscar donaciones" /><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => setNotice("Elegí una categoría para filtrar las necesidades.")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4"/><circle cx="8" cy="7" r="1.5"/><circle cx="15" cy="12" r="1.5"/></svg><span>Filtros</span></button></div>
+            <div className="section-title"><div><span className="section-kicker">ENCUENTROS QUE PUEDEN PASAR</span><h2>Publicaciones cerca tuyo</h2></div><button className="text-action" onClick={() => { setCategory("Todo"); setListingKindFilter("all"); setActiveNav("explorar"); }}>Ver todas <span>→</span></button></div>
+            <div className="search-row"><label className="search-box"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="¿Qué te gustaría encontrar?" aria-label="Buscar publicaciones" /><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => setShowFilters((value) => !value)} aria-expanded={showFilters}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4"/><circle cx="8" cy="7" r="1.5"/><circle cx="15" cy="12" r="1.5"/></svg><span>Filtros</span></button></div>
+            {showFilters && <div className="listing-filters" role="group" aria-label="Filtrar publicaciones"><span>Tipo de publicación</span><button type="button" className={listingKindFilter === "all" ? "active" : ""} onClick={() => setListingKindFilter("all")}>Todas</button><button type="button" className={listingKindFilter === "donation" ? "active" : ""} onClick={() => setListingKindFilter("donation")}>Donaciones</button><button type="button" className={listingKindFilter === "need" ? "active" : ""} onClick={() => setListingKindFilter("need")}>Necesidades</button><button type="button" className="clear-filters" onClick={() => { setCategory("Todo"); setListingKindFilter("all"); setQuery(""); }}>Limpiar</button></div>}
             <div className="category-row" role="tablist" aria-label="Categorías">
               {categories.map((entry, index) => <button key={entry} role="tab" aria-selected={category === entry} className={`category-chip ${category === entry ? "active" : ""}`} onClick={() => setCategory(entry)}><span className={`category-dot dot-${index}`} />{entry}{entry === "Todo" && <small>12</small>}</button>)}
             </div>
-            <div className="results-heading"><span>{activeNav === "guardados" ? "TUS GUARDADOS" : "PARA VOS"}</span><button onClick={() => setNotice("Mostrando primero lo más cercano a Mendoza.")}>Más cercanas <span>⌄</span></button></div>
+            <div className="results-heading"><span>{activeNav === "guardados" ? "TUS GUARDADOS" : listingKindFilter === "donation" ? "DONACIONES" : listingKindFilter === "need" ? "NECESIDADES" : "PARA VOS"}</span><button onClick={() => { if (!userPosition) requestLocation(); else setSortNearest((value) => !value); }}>{sortNearest ? "Más cercanas ✓" : "Más cercanas"} <span>⌄</span></button></div>
             <div className="listing-grid">
               {visibleItems.map((item) => <article className="listing-card" key={item.id}>
                 <div className={`listing-art art-${item.tone}`}>
                   {item.images?.length ? <Image className="listing-photo" src={item.images[carouselIndexes[item.id] || 0]} alt={`${item.title}, foto ${(carouselIndexes[item.id] || 0) + 1}`} fill sizes="(max-width: 760px) 50vw, 300px" unoptimized /> : <span className="item-emoji" aria-hidden="true">{item.icon}</span>}
-                  <span className="art-category">{item.category}</span>
+                  <span className="art-category">{item.category}</span><span className={`listing-kind-badge kind-${item.kind}`}>{item.kind === "donation" ? "Donación" : "Necesidad"}</span>
                   {item.images && item.images.length > 1 && <><button className="carousel-arrow carousel-prev" onClick={() => changeCarousel(item.id, -1, item.images!.length)} aria-label="Foto anterior">‹</button><button className="carousel-arrow carousel-next" onClick={() => changeCarousel(item.id, 1, item.images!.length)} aria-label="Foto siguiente">›</button><span className="carousel-count">{(carouselIndexes[item.id] || 0) + 1}/{item.images.length}</span></>}
                   <button className={`save-button ${item.saved ? "is-saved" : ""}`} onClick={() => toggleSaved(item.id)} aria-label={item.saved ? "Quitar de guardados" : "Guardar necesidad"}>{item.saved ? "♥" : "♡"}</button><span className="art-lines" />
                 </div>
-                <div className="listing-info"><div className="listing-place"><PinIcon />{item.place}<span>·</span>{item.distance}</div><h3>{item.title}</h3><p>{item.detail}</p><div className="listing-owner"><button onClick={() => { setSelectedUser(usersById.get(item.userId) || currentUser); setShowProfile(true); }}><Avatar user={usersById.get(item.userId) || currentUser} small /><span className="owner-copy"><strong>{(usersById.get(item.userId) || currentUser).name}</strong><small>{item.posted}{(usersById.get(item.userId) || currentUser).verified && <i aria-label="Perfil verificado"> ✓</i>}</small></span><span className="owner-arrow">↗</span></button></div><button className="contact-button" onClick={() => showContactForm(item)}>Contactar <span>↗</span></button></div>
+                <div className="listing-info"><div className="listing-place"><PinIcon />{item.place}<span>·</span>{listingDistance(item)}</div><h3>{item.title}</h3><p>{item.detail}</p><div className="listing-owner"><button onClick={() => { setSelectedUser(usersById.get(item.userId) || currentUser); setShowProfile(true); }}><Avatar user={usersById.get(item.userId) || currentUser} small /><span className="owner-copy"><strong>{(usersById.get(item.userId) || currentUser).name}</strong><small>{item.posted}{(usersById.get(item.userId) || currentUser).verified && <i aria-label="Perfil verificado"> ✓</i>}</small></span><span className="owner-arrow">↗</span></button></div><button className="contact-button" onClick={() => showContactForm(item)}>Contactar <span>↗</span></button></div>
               </article>)}
               {visibleItems.length === 0 && <div className="empty-state"><span>⌕</span><strong>{activeNav === "guardados" ? "Todavía no guardaste nada" : "No encontramos coincidencias"}</strong><p>{activeNav === "guardados" ? "Guardá una necesidad con el corazón para tenerla a mano." : "Probá otra búsqueda o elegí una categoría diferente."}</p><button onClick={() => { setQuery(""); setCategory("Todo"); setActiveNav("inicio"); }}>Ver todas las necesidades</button></div>}
             </div>
@@ -358,11 +435,11 @@ export default function Home() {
         </div>
       </section>
 
-      <nav className="mobile-nav" aria-label="Navegación móvil">{mobileNavItems.map((item) => <button key={item.id} onClick={() => item.id === "publicar" ? setShowCreate(true) : selectNav(item.id)} className={`${activeNav === item.id ? "active" : ""} ${item.id === "publicar" ? "mobile-publish" : ""}`} aria-label={item.label}><span>{item.icon}</span><small>{item.label}</small></button>)}</nav>
+      <nav className="mobile-nav" aria-label="Navegación móvil">{mobileNavItems.map((item) => <button key={item.id} onClick={() => item.id === "publicar" ? openPublishForm() : selectNav(item.id)} className={`${activeNav === item.id ? "active" : ""} ${item.id === "publicar" ? "mobile-publish" : ""}`} aria-label={item.label}><span>{item.icon}</span><small>{item.label}</small></button>)}</nav>
 
       {notice && <div role="status" className="toast"><span>♥</span>{notice}<button onClick={() => setNotice("")} aria-label="Cerrar">×</button></div>}
 
-      {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-title"><button className="modal-close" onClick={() => setShowCreate(false)} aria-label="Cerrar">×</button><span className="modal-mark">＋</span><span className="section-kicker">HACÉ QUE ALGO BUENO PASE</span><h2 id="create-title">Publicá una necesidad</h2><p>Contale a la comunidad qué estás buscando. Alguien cerca puede tenerlo para compartir.</p><form onSubmit={createListing}><label>¿Qué necesitás?<input name="title" required placeholder="Ej. Abrigo para este invierno" /></label><div className="form-row"><label>Categoría<select name="category">{categories.slice(1).map((entry) => <option key={entry}>{entry}</option>)}</select></label><label>Zona<input name="place" required placeholder="Ej. Godoy Cruz" /></label></div><label>Un poco más de detalle<textarea name="detail" rows={3} placeholder="Contanos qué te serviría y para quién es…" /></label><label className="photo-upload">Fotos de la publicación<input type="file" accept="image/*" multiple onChange={addPhotos} /><small>Hasta 4 imágenes. Las optimizamos y guardamos en este navegador.</small></label>{newPhotos.length > 0 && <div className="photo-preview-grid">{newPhotos.map((photo, index) => <div className="photo-preview" key={`${photo.slice(-24)}-${index}`}><Image src={photo} alt={`Vista previa ${index + 1}`} width={88} height={72} unoptimized /><button type="button" onClick={() => setNewPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))} aria-label={`Quitar foto ${index + 1}`}>×</button></div>)}</div>}{photoError && <small className="photo-error" role="alert">{photoError}</small>}<button className="submit-button" type="submit">Publicar en HELPi <span>→</span></button><small>La publicación queda disponible en esta demo local; todavía no se comparte en línea.</small></form></section></div>}
+      {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-title"><button className="modal-close" onClick={() => setShowCreate(false)} aria-label="Cerrar">×</button><span className="modal-mark">＋</span><span className="section-kicker">HACÉ QUE ALGO BUENO PASE</span><h2 id="create-title">{newListingKind === "donation" ? "Publicá una donación" : "Publicá una necesidad"}</h2><p>{newListingKind === "donation" ? "Contale a la comunidad qué querés compartir." : "Contale a la comunidad qué estás buscando."}</p><div className="publish-kind-selector" role="group" aria-label="Tipo de publicación"><button type="button" className={newListingKind === "donation" ? "active" : ""} onClick={() => setNewListingKind("donation")}>Ofrecer donación</button><button type="button" className={newListingKind === "need" ? "active" : ""} onClick={() => setNewListingKind("need")}>Pedir ayuda</button></div><form onSubmit={createListing}><label>{newListingKind === "donation" ? "¿Qué querés donar?" : "¿Qué necesitás?"}<input name="title" required placeholder={newListingKind === "donation" ? "Ej. Libros infantiles en buen estado" : "Ej. Abrigo para este invierno"} /></label><div className="form-row"><label>Categoría<select name="category">{categories.slice(1).map((entry) => <option key={entry}>{entry}</option>)}</select></label><label>Zona<input name="place" required defaultValue={currentUser.place} placeholder="Ej. Godoy Cruz" /></label></div><label>Un poco más de detalle<textarea name="detail" rows={3} placeholder={newListingKind === "donation" ? "Describí el estado y disponibilidad…" : "Contanos qué te serviría y para quién es…"} /></label><label className="photo-upload">Fotos de la publicación<input type="file" accept="image/*" multiple onChange={addPhotos} /><small>Hasta 4 imágenes; se optimizan para esta demo local.</small></label>{newPhotos.length > 0 && <div className="photo-preview-grid">{newPhotos.map((photo, index) => <div className="photo-preview" key={`${photo.slice(-24)}-${index}`}><Image src={photo} alt={`Vista previa ${index + 1}`} width={88} height={72} unoptimized /><button type="button" onClick={() => setNewPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))} aria-label={`Quitar foto ${index + 1}`}>×</button></div>)}</div>}{photoError && <small className="photo-error" role="alert">{photoError}</small>}<label className="location-consent"><input type="checkbox" name="includeLocation" disabled={!userPosition} /><span>Incluir mi ubicación precisa en esta publicación.</span></label>{!userPosition && <button type="button" className="location-request" onClick={requestLocation}>Activar ubicación para ordenar por distancia</button>}<button className="submit-button" type="submit">Publicar {newListingKind === "donation" ? "donación" : "necesidad"} <span>→</span></button><small>Queda guardada en este navegador; todavía no se comparte en línea.</small></form></section></div>}
 
       {contactTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setContactTarget(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="contact-title"><button className="modal-close" onClick={() => setContactTarget(null)} aria-label="Cerrar">×</button><span className="modal-mark">↗</span><span className="section-kicker">UN ENCUENTRO PUEDE EMPEZAR ACÁ</span><h2 id="contact-title">Contactar a {(usersById.get(contactTarget.userId) || currentUser).name}</h2><p>Sobre <strong>{contactTarget.title}</strong>. Contale quién sos y por qué te interesa.</p><form onSubmit={createContactRequest}><label>Tu nombre<input name="senderName" required minLength={2} maxLength={80} defaultValue={currentUser.name} autoComplete="name" /></label><label>Tu email<input name="senderEmail" type="email" required maxLength={254} defaultValue={currentUser.email || ""} placeholder="vos@ejemplo.com" autoComplete="email" /></label><label>Mensaje<textarea name="message" rows={4} required minLength={10} maxLength={1000} placeholder="Hola, me interesa esta publicación…" /></label><small className="contact-disclaimer">Demo local: la solicitud queda guardada en este navegador. El destinatario todavía no recibe el mensaje.</small><button className="submit-button" type="submit">Guardar solicitud <span>→</span></button></form></section></div>}
 
