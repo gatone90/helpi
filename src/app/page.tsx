@@ -95,7 +95,7 @@ function Avatar({ user, small = false }: { user: MockUser; small?: boolean }) {
 }
 
 function Brand() {
-  return <a className="brand" href="#inicio" aria-label="HELPi, inicio"><span className="brand-word">HELP</span><span className="brand-i">i</span><span className="brand-heart">♥</span></a>;
+  return <a className="brand-lockup" href="#inicio" aria-label="HELPi, Compartir nos conecta"><span className="brand"><span className="brand-word">HELP</span><span className="brand-i">i</span></span><span className="brand-tagline">Compartir nos conecta.</span></a>;
 }
 
 function PinIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 12-7 12S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.2"/></svg>; }

@@ -1,0 +1,21 @@
+:root {
+  --helpi-coral: #ED8178;
+  --helpi-coral-hover: #E56E65;
+  --helpi-coral-pressed: #D95E55;
+  --helpi-sky: #7EC8E3;
+  --helpi-sky-soft: #E5F6FC;
+  --helpi-cream: #FFF8F6;
+  --helpi-navy: #2D3748;
+  --helpi-muted: #657185;
+  --helpi-border: #DDE3EA;
+  --helpi-white: #FFFFFF;
+  --helpi-success: #227A4C;
+  --helpi-warning: #8B5700;
+  --helpi-error: #B42318;
+  --helpi-font: 'Poppins', system-ui, sans-serif;
+  --helpi-radius-sm: 10px;
+  --helpi-radius-md: 14px;
+  --helpi-radius-lg: 20px;
+  --helpi-shadow: 0 4px 18px rgba(45,55,72,.08);
+  --helpi-focus: #225FBE;
+}
